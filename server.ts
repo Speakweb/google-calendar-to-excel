@@ -63,9 +63,6 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
     const toISOString = spreadsheetRecord.Start().toISOString();
     const date = new Date(removeTimezoneFromGoogleDate(event.start?.dateTime as string));
     const start = date.toISOString();
-    if (student === 'Mason 1on1') {
-        console.log(date)
-    }
     return student === summary &&
         toISOString === start;
 };
@@ -85,6 +82,7 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                     timeMax: new Date((new Date().getTime() + (timeOffsetEnd * 1000))).toISOString(),
                     singleEvents: true,
                     orderBy: 'startTime',
+                    maxResults: 2500
                 },
                 {}
             )
