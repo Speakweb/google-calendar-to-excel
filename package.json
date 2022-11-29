@@ -18,7 +18,9 @@
   },
   "homepage": "https://github.com/marvinirwin/google-calendar-to-excel#readme",
   "dependencies": {
+    "@types/debug": "^4.1.7",
     "date-fns": "^2.29.3",
+    "debug": "^4.3.4",
     "dotenv": "^16.0.3",
     "google-spreadsheet": "^3.3.0",
     "googleapis": "^109.0.1",

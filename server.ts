@@ -2,8 +2,12 @@ import {google, calendar_v3} from 'googleapis';
 import {GoogleSpreadsheet} from 'google-spreadsheet';
 import {config} from 'dotenv';
 import {format, isWithinInterval, parse} from 'date-fns';
-import * as events from "events";
+import debug from 'debug'
+
+const d = debug('events-to-spreadsheet:')
+
 // 11/24/2022 20:35:00
+const secondsInADay = 86400;
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, "MM/dd/yyyy H:mm:ss", new Date());
 
 config()
@@ -18,10 +22,11 @@ fromJsonCredentials.scopes = [
 const calendarId = process.env.CALENDAR_ID as string;
 const sheetId = process.env.SHEET_ID as string;
 
-const secondsInADay = 86400;
 
 const timeOffsetStart = parseInt(process.env.TIME_OFFSET_START || String(secondsInADay * 31));
 const timeOffsetEnd = parseInt(process.env.TIME_OFFSET_END || String(secondsInADay * 31));
+
+const runInterval = parseInt(process.env.RUN_INTERVAL || "60000");
 
 type SpreadsheetRowType = {
     Start: string,
@@ -71,9 +76,11 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
     const runIteration = async () => {
         const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
         const doc = new GoogleSpreadsheet(sheetId);
+        d(`Authenticating document`)
         await doc.useServiceAccountAuth(jsonCredentials);
         await doc.loadInfo();
         const sheet = doc.sheetsByIndex[0];
+        d(`Resolved sheet`)
         // Only take the records and events from within a month, so we don't have too many things
         const fetchAllCalendarEvents = async () => {
             const response = await calendar.events.list({
@@ -87,11 +94,21 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                 {}
             )
 
+            if (!response.data.items) {
+                d(`Something went wrong fetching events from calendar ${calendarId}`);
+            }
+
+            d(`Fetched ${response.data.items?.length} events from calendar`);
+
             return response.data.items || [];
         }
         const fetchAllSpreadsheetRecords = async () => {
+            d(`Getting rows from sheet...`)
             const rows: SpreadsheetRowHelper[] = (await sheet.getRows()).map(row => new SpreadsheetRowHelper(row as unknown as SpreadsheetRowType));
-            return rows.filter(row => row.isWithinDateRange());
+            d(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
+            const filteredRows = rows.filter(row => row.isWithinDateRange());
+            d(`${filteredRows.length} rows left after filter`)
+            return filteredRows;
         }
 
         const compareEventsAndSpreadsheet = async () => {
@@ -109,6 +126,8 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                     }
                 );
 
+/*
+Don't delete anything because we only add calendar schedules from today and not in the future
             const spreadsheetRecordsWhichDontExistInTheCalendar = allSpreadsheetRecords
                 // First filter the records which are actually student attendance records
                 .filter(spreadsheetRecord => spreadsheetRecord.Student())
@@ -124,8 +143,10 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                 const spreadsheetRecordsWhichDontExistInTheCalendarElement = spreadsheetRecordsWhichDontExistInTheCalendar[i];
                 console.log(`delete ${spreadsheetRecordsWhichDontExistInTheCalendarElement.Student()} ${spreadsheetRecordsWhichDontExistInTheCalendarElement.Start()}`)
             }
+*/
 
             const insertRecordsIntoSpreadsheet = async () => {
+                d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
                 const fmtDate = (d: undefined | null | string) => {
                     let removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
                     let date = removeTimezoneFromGoogleDate1 &&  new Date(removeTimezoneFromGoogleDate1);
@@ -145,6 +166,7 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                         }
                     )
                 );
+                d(`Added ${result.length} rows to spreadsheet.`);
             }
             await insertRecordsIntoSpreadsheet()
             // Insert those events into the spreadsheet
@@ -153,10 +175,15 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
         }
         await compareEventsAndSpreadsheet();
     }
-    try {
-        await runIteration();
-    } catch (e) {
-        console.error(e)
+    while (true) {
+        try {
+            d(`running iteration...`)
+            await runIteration();
+        } catch (e) {
+            console.error(e)
+        }
+        d(`Finished iteration.  Waiting ${runInterval}ms`)
+        await new Promise(resolve => setTimeout(resolve, runInterval))
     }
 })();
 
