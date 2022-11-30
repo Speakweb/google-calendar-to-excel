@@ -146,6 +146,10 @@ Don't delete anything because we only add calendar schedules from today and not 
 */
 
             const insertRecordsIntoSpreadsheet = async () => {
+                if (!eventsWhichDontExistInTheSpreadsheet.length) {
+                    d(`No events to insert into spreadsheet`);
+                    return;
+                }
                 d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
                 const fmtDate = (d: undefined | null | string) => {
                     let removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
