@@ -57,7 +57,6 @@ class SpreadsheetRowHelper {
     }
 }
 
-
 const removeTimezoneFromGoogleDate = (dateString: string) => {
     return dateString.replace(/[+-]\d{2}:\d{2}$/, '');
 }
@@ -155,7 +154,7 @@ Don't delete anything because we only add calendar schedules from today and not 
                     let removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
                     let date = removeTimezoneFromGoogleDate1 &&  new Date(removeTimezoneFromGoogleDate1);
                     return date ?
-                        format(date, "M/d/yyyy H:mm:ss") :
+                        format(date, "yyyy/M/d H:mm:ss") :
                         date
                 }
                 const result = await sheet.addRows(
