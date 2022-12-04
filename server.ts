@@ -1,4 +1,4 @@
-import {google, calendar_v3} from 'googleapis';
+import {calendar_v3, google} from 'googleapis';
 import {GoogleSpreadsheet} from 'google-spreadsheet';
 import {config} from 'dotenv';
 import {format, isWithinInterval, parse} from 'date-fns';
@@ -8,7 +8,7 @@ const d = debug('events-to-spreadsheet:')
 
 // 11/24/2022 20:35:00
 const secondsInADay = 86400;
-const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, "MM/dd/yyyy H:mm:ss", new Date());
+const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, "yyyy/MM/dd H:mm:ss", new Date());
 
 config()
 
