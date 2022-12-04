@@ -68,8 +68,8 @@ type SpreadsheetRowType = {
 const isSpreadsheetStartDateWithinDateRage = (date: Date) => {
     // The date filter in google calendar is a bit looser somehow, and events not strictly between the ranges even will appear
     // So when filtering spreadsheet rows, keep some which aren't strictly in our date range
-    const minDate = sub(getMinDate(), {days: 1});
-    const maxDate = add(getMaxDate(), {days: 1});
+    const minDate = sub(getMinDate(), {days: 2});
+    const maxDate = add(getMaxDate(), {days: 2});
     return isWithinInterval(date, {
         start: minDate,
         end: maxDate
@@ -181,8 +181,8 @@ const getMaxDate = () => new Date((new Date().getTime() + (timeOffsetEnd * 1000)
                 }
                 d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
                 const fmtDate = (d: undefined | null | string) => {
-                    let removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
-                    let date = removeTimezoneFromGoogleDate1 &&  new Date(removeTimezoneFromGoogleDate1);
+                    const removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
+                    const date = removeTimezoneFromGoogleDate1 && new Date(removeTimezoneFromGoogleDate1);
                     return date ?
                         format(date, formatString) :
                         date
