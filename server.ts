@@ -1,14 +1,50 @@
 import {calendar_v3, google} from 'googleapis';
-import {GoogleSpreadsheet} from 'google-spreadsheet';
+import {GoogleSpreadsheet, GoogleSpreadsheetRow} from 'google-spreadsheet';
 import {config} from 'dotenv';
 import {format, isWithinInterval, parse} from 'date-fns';
 import debug from 'debug'
+import * as fs from "fs";
 
 const d = debug('events-to-spreadsheet:')
 
 // 11/24/2022 20:35:00
 const secondsInADay = 86400;
 const formatString = "yyyy/MM/dd H:mm:ss";
+
+
+/**
+ * Start replayable function
+ */
+let newReplayMap: Record<string, any> = {};
+const replayMapPath = './replay.json';
+const replayableFunction = <T>(key: string, f: () => Promise<T>): () => Promise<T> => async () => {
+    const isReplaying = process.env.REPLAY === 'true';
+    if (isReplaying) {
+        const lastReplayMap = JSON.parse(fs.readFileSync(replayMapPath).toString('utf8'));
+        if (lastReplayMap[key] === undefined) {
+            throw new Error(`Replay dictionary key ${key} is undefined`);
+        }
+        return lastReplayMap[key];
+    }
+
+    const returned = await f();
+    if (newReplayMap[key]) {
+        // THere' sa possibility of adding array replaying, but it gets way too complicated
+        throw new Error(`replayKey: ${key} used twice.  You cannot use the same key in different places, or call the same function twice`)
+    }
+    newReplayMap[key] = returned;
+    return newReplayMap[key];
+}
+const startReplay = () => {
+    newReplayMap = {};
+}
+const endReplay = () => {
+    fs.writeFileSync(replayMapPath, JSON.stringify(newReplayMap, undefined,'\t'));
+}
+/**
+ * End replayable function function
+ * @param dateStr
+ */
 
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
@@ -64,6 +100,12 @@ const removeTimezoneFromGoogleDate = (dateString: string) => {
 }
 
 const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Schema$Event) => {
+    if (spreadsheetRecord.r.Student === undefined && spreadsheetRecord.r.Start === "2022/12/04 18:00:00") {
+        debugger;console.log();
+    }
+    if (spreadsheetRecord.r.Student === 'Marvin' && spreadsheetRecord.r.Start === "2022/12/05 9:00:00") {
+        debugger;console.log();
+    }
     const student = spreadsheetRecord.Student();
     const summary = event.summary;
     const toISOString = spreadsheetRecord.Start().toISOString();
@@ -75,6 +117,7 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
 
 (async () => {
     const runIteration = async () => {
+        startReplay();
         const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
         const doc = new GoogleSpreadsheet(sheetId);
         d(`Authenticating document`)
@@ -83,7 +126,7 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
         const sheet = doc.sheetsByIndex[0];
         d(`Resolved sheet`)
         // Only take the records and events from within a month, so we don't have too many things
-        const fetchAllCalendarEvents = async () => {
+        const fetchAllCalendarEvents = replayableFunction("calendarEvents", async () => {
             const response = await calendar.events.list({
                     calendarId,
                     timeMin: new Date((new Date().getTime() - (timeOffsetStart * 1000))).toISOString(),
@@ -101,11 +144,16 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
 
             d(`Fetched ${response.data.items?.length} events from calendar`);
 
-            return response.data.items || [];
-        }
-        const fetchAllSpreadsheetRecords = async () => {
+            // Filter out items with no summary, we can ignore those
+            return response.data.items?.filter(item => item.summary) || [];
+        })
+        const fetchAllSpreadsheetRecords = replayableFunction('spreadsheetRecords', async () => {
             d(`Getting rows from sheet...`)
-            const rows: SpreadsheetRowHelper[] = (await sheet.getRows()).map(row => new SpreadsheetRowHelper(row as unknown as SpreadsheetRowType));
+            // @ts-ignore
+            return (await sheet.getRows()).map((r: SpreadsheetRowType) => ({Student: r.Student, Start: r.Start}));
+        })
+        const filterSpreadsheetRows = (rawRows: SpreadsheetRowType[]) => {
+            const rows: SpreadsheetRowHelper[] = rawRows.map(row => new SpreadsheetRowHelper(row))
             d(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
             const filteredRows = rows.filter(row => row.isWithinDateRange());
             d(`${filteredRows.length} rows left after filter`)
@@ -114,16 +162,17 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
 
         const compareEventsAndSpreadsheet = async () => {
             const allEvents = await fetchAllCalendarEvents();
-            const allSpreadsheetRecords = await fetchAllSpreadsheetRecords();
+            const allSpreadsheetRecords = filterSpreadsheetRows(await fetchAllSpreadsheetRecords());
             const eventsWhichDontExistInTheSpreadsheet = allEvents
                 .filter(
                     event => {
-                        return !allSpreadsheetRecords
+                        let b = !allSpreadsheetRecords
                             .find(
                                 spreadsheetRecord => {
                                     return isSame(spreadsheetRecord, event);
                                 }
                             );
+                        return b;
                     }
                 );
 
@@ -159,19 +208,21 @@ Don't delete anything because we only add calendar schedules from today and not 
                         format(date, formatString) :
                         date
                 }
+                let rowsBeingAdded = eventsWhichDontExistInTheSpreadsheet.map(evElement => {
+                        return (
+                            {
+                                Student: evElement.summary as string,
+                                Start: fmtDate(evElement.start?.dateTime) || "No start date",
+                                End: fmtDate(evElement.end?.dateTime) || "No end date",
+                            }
+                        );
+                    }
+                );
                 const result = await sheet.addRows(
-                    eventsWhichDontExistInTheSpreadsheet.map(evElement => {
-                            return (
-                                {
-                                    Student: evElement.summary as string,
-                                    Start: fmtDate(evElement.start?.dateTime) || "No start date",
-                                    End: fmtDate(evElement.end?.dateTime) || "No end date",
-                                }
-                            );
-                        }
-                    )
+                    rowsBeingAdded
                 );
                 d(`Added ${result.length} rows to spreadsheet.`);
+                d(JSON.stringify(rowsBeingAdded))
             }
             await insertRecordsIntoSpreadsheet()
             // Insert those events into the spreadsheet
@@ -179,6 +230,11 @@ Don't delete anything because we only add calendar schedules from today and not 
             // Expand all formulas to encapsulate the whole spreadsheet
         }
         await compareEventsAndSpreadsheet();
+        endReplay();
+    }
+    if (process.env.SERVICE_PAUSED === 'true') {
+        console.log(`service paused, exiting`)
+        return;
     }
     while (true) {
         try {
