@@ -8,7 +8,8 @@ const d = debug('events-to-spreadsheet:')
 
 // 11/24/2022 20:35:00
 const secondsInADay = 86400;
-const formatString = "yyyy/M/dd H:mm:ss";
+const formatString = "yyyy/MM/dd H:mm:ss";
+
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
 config()
