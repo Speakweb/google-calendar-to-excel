@@ -8,7 +8,8 @@ const d = debug('events-to-spreadsheet:')
 
 // 11/24/2022 20:35:00
 const secondsInADay = 86400;
-const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, "yyyy/MM/dd H:mm:ss", new Date());
+const formatString = "yyyy/M/dd H:mm:ss";
+const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
 config()
 
@@ -154,7 +155,7 @@ Don't delete anything because we only add calendar schedules from today and not 
                     let removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
                     let date = removeTimezoneFromGoogleDate1 &&  new Date(removeTimezoneFromGoogleDate1);
                     return date ?
-                        format(date, "yyyy/M/d H:mm:ss") :
+                        format(date, formatString) :
                         date
                 }
                 const result = await sheet.addRows(
