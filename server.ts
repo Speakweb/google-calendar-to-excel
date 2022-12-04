@@ -1,7 +1,7 @@
 import {calendar_v3, google} from 'googleapis';
 import {GoogleSpreadsheet, GoogleSpreadsheetRow} from 'google-spreadsheet';
 import {config} from 'dotenv';
-import {format, isWithinInterval, parse} from 'date-fns';
+import {format, isWithinInterval, parse, add, sub} from 'date-fns';
 import debug from 'debug'
 import * as fs from "fs";
 
@@ -11,14 +11,10 @@ const d = debug('events-to-spreadsheet:')
 const secondsInADay = 86400;
 const formatString = "yyyy/MM/dd H:mm:ss";
 
-
-/**
- * Start replayable function
- */
 let newReplayMap: Record<string, any> = {};
 const replayMapPath = './replay.json';
+const isReplaying = process.env.REPLAY === 'true';
 const replayableFunction = <T>(key: string, f: () => Promise<T>): () => Promise<T> => async () => {
-    const isReplaying = process.env.REPLAY === 'true';
     if (isReplaying) {
         const lastReplayMap = JSON.parse(fs.readFileSync(replayMapPath).toString('utf8'));
         if (lastReplayMap[key] === undefined) {
@@ -39,12 +35,10 @@ const startReplay = () => {
     newReplayMap = {};
 }
 const endReplay = () => {
-    fs.writeFileSync(replayMapPath, JSON.stringify(newReplayMap, undefined,'\t'));
+    if (!isReplaying) {
+        fs.writeFileSync(replayMapPath, JSON.stringify(newReplayMap, undefined,'\t'));
+    }
 }
-/**
- * End replayable function function
- * @param dateStr
- */
 
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
@@ -71,10 +65,14 @@ type SpreadsheetRowType = {
     Student: string
 };
 
-const isWithinDateRange = (date: Date) => {
+const isSpreadsheetStartDateWithinDateRage = (date: Date) => {
+    // The date filter in google calendar is a bit looser somehow, and events not strictly between the ranges even will appear
+    // So when filtering spreadsheet rows, keep some which aren't strictly in our date range
+    const minDate = sub(getMinDate(), {days: 1});
+    const maxDate = add(getMaxDate(), {days: 1});
     return isWithinInterval(date, {
-        start: new Date(((new Date().getTime() / 1000) - timeOffsetStart) * 1000),
-        end: new Date(((new Date().getTime() / 1000) + timeOffsetEnd) * 1000)
+        start: minDate,
+        end: maxDate
     })
 }
 
@@ -83,7 +81,7 @@ class SpreadsheetRowHelper {
     }
 
     isWithinDateRange() {
-        return isWithinDateRange(this.Start())
+        return isSpreadsheetStartDateWithinDateRage(this.Start())
     }
 
     Student(): string {
@@ -100,12 +98,6 @@ const removeTimezoneFromGoogleDate = (dateString: string) => {
 }
 
 const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Schema$Event) => {
-    if (spreadsheetRecord.r.Student === undefined && spreadsheetRecord.r.Start === "2022/12/04 18:00:00") {
-        debugger;console.log();
-    }
-    if (spreadsheetRecord.r.Student === 'Marvin' && spreadsheetRecord.r.Start === "2022/12/05 9:00:00") {
-        debugger;console.log();
-    }
     const student = spreadsheetRecord.Student();
     const summary = event.summary;
     const toISOString = spreadsheetRecord.Start().toISOString();
@@ -114,6 +106,10 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
     return student === summary &&
         toISOString === start;
 };
+
+const getMinDate = () => new Date((new Date().getTime() - (timeOffsetStart * 1000)));
+
+const getMaxDate = () => new Date((new Date().getTime() + (timeOffsetEnd * 1000)));
 
 (async () => {
     const runIteration = async () => {
@@ -127,10 +123,12 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
         d(`Resolved sheet`)
         // Only take the records and events from within a month, so we don't have too many things
         const fetchAllCalendarEvents = replayableFunction("calendarEvents", async () => {
+            const timeMin = getMinDate().toISOString();
+            const timeMax = getMaxDate().toISOString();
             const response = await calendar.events.list({
                     calendarId,
-                    timeMin: new Date((new Date().getTime() - (timeOffsetStart * 1000))).toISOString(),
-                    timeMax: new Date((new Date().getTime() + (timeOffsetEnd * 1000))).toISOString(),
+                    timeMin: timeMin,
+                    timeMax: timeMax,
                     singleEvents: true,
                     orderBy: 'startTime',
                     maxResults: 2500
@@ -176,25 +174,6 @@ const isSame = (spreadsheetRecord: SpreadsheetRowHelper, event: calendar_v3.Sche
                     }
                 );
 
-/*
-Don't delete anything because we only add calendar schedules from today and not in the future
-            const spreadsheetRecordsWhichDontExistInTheCalendar = allSpreadsheetRecords
-                // First filter the records which are actually student attendance records
-                .filter(spreadsheetRecord => spreadsheetRecord.Student())
-                // Now filter records which dont exist as events
-                .filter(spreadsheetRecord => {
-                    const existsInCalendar = allEvents.find(event => {
-                        return isSame(spreadsheetRecord, event)
-                    })
-                    return !existsInCalendar;
-                });
-            // Now delete these
-            for (let i = 0; i < spreadsheetRecordsWhichDontExistInTheCalendar.length; i++) {
-                const spreadsheetRecordsWhichDontExistInTheCalendarElement = spreadsheetRecordsWhichDontExistInTheCalendar[i];
-                console.log(`delete ${spreadsheetRecordsWhichDontExistInTheCalendarElement.Student()} ${spreadsheetRecordsWhichDontExistInTheCalendarElement.Start()}`)
-            }
-*/
-
             const insertRecordsIntoSpreadsheet = async () => {
                 if (!eventsWhichDontExistInTheSpreadsheet.length) {
                     d(`No events to insert into spreadsheet`);
@@ -208,7 +187,7 @@ Don't delete anything because we only add calendar schedules from today and not 
                         format(date, formatString) :
                         date
                 }
-                let rowsBeingAdded = eventsWhichDontExistInTheSpreadsheet.map(evElement => {
+                const rowsBeingAdded = eventsWhichDontExistInTheSpreadsheet.map(evElement => {
                         return (
                             {
                                 Student: evElement.summary as string,
@@ -225,9 +204,6 @@ Don't delete anything because we only add calendar schedules from today and not 
                 d(JSON.stringify(rowsBeingAdded))
             }
             await insertRecordsIntoSpreadsheet()
-            // Insert those events into the spreadsheet
-            // Expand all filter views to encapsulate the whole spreadsheet
-            // Expand all formulas to encapsulate the whole spreadsheet
         }
         await compareEventsAndSpreadsheet();
         endReplay();

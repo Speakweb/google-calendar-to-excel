@@ -1,0 +1,119 @@
+{
+	"calendarEvents": [
+		{
+			"kind": "calendar#event",
+			"etag": "\"3340273578110000\"",
+			"id": "3f2ic6jbdru5oo3qu7hif48ki1",
+			"status": "confirmed",
+			"htmlLink": "https://www.google.com/calendar/event?eid=M2YyaWM2amJkcnU1b28zcXU3aGlmNDhraTEgaHNqYW40MTMyQG0",
+			"created": "2022-12-01T18:19:16.000Z",
+			"updated": "2022-12-04T06:53:09.055Z",
+			"summary": "Marvin",
+			"creator": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"organizer": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"start": {
+				"dateTime": "2022-12-05T09:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"end": {
+				"dateTime": "2022-12-05T15:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"iCalUID": "3f2ic6jbdru5oo3qu7hif48ki1@google.com",
+			"sequence": 0,
+			"reminders": {
+				"useDefault": true
+			},
+			"eventType": "default"
+		},
+		{
+			"kind": "calendar#event",
+			"etag": "\"3340097348428000\"",
+			"id": "60ojceb3c4p68b9o6komcb9k71i3cb9p6opj0bb26coj0e1k6srj2opp74_20221205T070000Z",
+			"status": "confirmed",
+			"htmlLink": "https://www.google.com/calendar/event?eid=NjBvamNlYjNjNHA2OGI5bzZrb21jYjlrNzFpM2NiOXA2b3BqMGJiMjZjb2owZTFrNnNyajJvcHA3NF8yMDIyMTIwNVQwNzAwMDBaIGhzamFuNDEzMkBt",
+			"created": "2022-12-03T06:24:34.000Z",
+			"updated": "2022-12-03T06:24:34.214Z",
+			"summary": "Tracy",
+			"creator": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"organizer": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"start": {
+				"dateTime": "2022-12-05T15:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"end": {
+				"dateTime": "2022-12-05T16:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"recurringEventId": "60ojceb3c4p68b9o6komcb9k71i3cb9p6opj0bb26coj0e1k6srj2opp74",
+			"originalStartTime": {
+				"dateTime": "2022-12-05T15:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"iCalUID": "60ojceb3c4p68b9o6komcb9k71i3cb9p6opj0bb26coj0e1k6srj2opp74@google.com",
+			"sequence": 0,
+			"reminders": {
+				"useDefault": true
+			},
+			"eventType": "default"
+		},
+		{
+			"kind": "calendar#event",
+			"etag": "\"3340273560760000\"",
+			"id": "6ks3idhoc4pmab9p64pmab9kc4qj4b9p6op3ab9o70r3acb2cphj6pb4c4",
+			"status": "confirmed",
+			"htmlLink": "https://www.google.com/calendar/event?eid=NmtzM2lkaG9jNHBtYWI5cDY0cG1hYjlrYzRxajRiOXA2b3AzYWI5bzcwcjNhY2IyY3BoajZwYjRjNCBoc2phbjQxMzJAbQ",
+			"created": "2022-12-02T09:05:49.000Z",
+			"updated": "2022-12-04T06:53:00.380Z",
+			"summary": "David",
+			"creator": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"organizer": {
+				"email": "hsjan4132@gmail.com",
+				"self": true
+			},
+			"start": {
+				"dateTime": "2022-12-05T16:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"end": {
+				"dateTime": "2022-12-05T17:00:00+08:00",
+				"timeZone": "Asia/Taipei"
+			},
+			"iCalUID": "6ks3idhoc4pmab9p64pmab9kc4qj4b9p6op3ab9o70r3acb2cphj6pb4c4@google.com",
+			"sequence": 1,
+			"reminders": {
+				"useDefault": true
+			},
+			"eventType": "default"
+		}
+	],
+	"spreadsheetRecords": [
+		{
+			"Student": "Marvin",
+			"Start": "2022/12/05 9:00:00"
+		},
+		{
+			"Student": "Tracy",
+			"Start": "2022/12/05 15:00:00"
+		},
+		{
+			"Student": "David",
+			"Start": "2022/12/05 16:00:00"
+		}
+	]
+}
