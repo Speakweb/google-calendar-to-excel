@@ -51,8 +51,14 @@ fromJsonCredentials.scopes = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/calendar.events"
 ];
-const calendarId = process.env.CALENDAR_ID as string;
-const sheetId = process.env.SHEET_ID as string;
+
+type CalendarSheetConfig = {
+    sheetTitle: string;
+    calendarId: string;
+}
+
+const calendarSheetConfigs = JSON.parse(process.env.CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
+const docId = process.env.SHEET_ID as string;
 
 
 const timeOffsetStart = parseInt(process.env.TIME_OFFSET_START || String(secondsInADay * 31));
@@ -115,98 +121,111 @@ const getMaxDate = () => new Date((new Date().getTime() + (timeOffsetEnd * 1000)
     const runIteration = async () => {
         startReplay();
         const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
-        const doc = new GoogleSpreadsheet(sheetId);
+        const doc = new GoogleSpreadsheet(docId);
         d(`Authenticating document`)
         await doc.useServiceAccountAuth(jsonCredentials);
         await doc.loadInfo();
-        const sheet = doc.sheetsByIndex[0];
-        d(`Resolved sheet`)
-        // Only take the records and events from within a month, so we don't have too many things
-        const fetchAllCalendarEvents = replayableFunction("calendarEvents", async () => {
-            const timeMin = getMinDate().toISOString();
-            const timeMax = getMaxDate().toISOString();
-            const response = await calendar.events.list({
-                    calendarId,
-                    timeMin: timeMin,
-                    timeMax: timeMax,
-                    singleEvents: true,
-                    orderBy: 'startTime',
-                    maxResults: 2500
-                },
-                {}
-            )
+        for (let i = 0; i < calendarSheetConfigs.length; i++) {
+            const {calendarId, sheetTitle} = calendarSheetConfigs[i];
+/*
+Commenting this out because I don't know if this call is indepontent, but when there's a new calendar I gotta run it aagin
+            try {
+                const v = await calendar.calendarList.insert({requestBody: {id: calendarId, accessRole: 'reader'}})
+                console.log(v.data);
+            } catch(e){
+                console.error();
+            }
+*/
+            const sheet = doc.sheetsByTitle[sheetTitle];
+            d(`Adding events for ${calendarId} ${sheetTitle}`)
+            // Only take the records and events from within a month, so we don't have too many things
+            const fetchAllCalendarEvents = replayableFunction(`calendarEvents-${calendarId}-${sheetTitle}`, async () => {
+                const timeMin = getMinDate().toISOString();
+                const timeMax = getMaxDate().toISOString();
+                const response = await calendar.events.list({
+                        calendarId,
+                        timeMin: timeMin,
+                        timeMax: timeMax,
+                        singleEvents: true,
+                        orderBy: 'startTime',
+                        maxResults: 2500
+                    },
+                    {}
+                )
 
-            if (!response.data.items) {
-                d(`Something went wrong fetching events from calendar ${calendarId}`);
+                if (!response.data.items) {
+                    d(`Something went wrong fetching events from calendar ${calendarId}`);
+                }
+
+                d(`Fetched ${response.data.items?.length} events from calendar`);
+
+                // Filter out items with no summary, we can ignore those
+                return response.data.items?.filter(item => item.summary) || [];
+            })
+            const fetchAllSpreadsheetRecords = replayableFunction(`spreadsheetRecords-${calendarId}-${sheetTitle}`, async () => {
+                d(`Getting rows from sheet...`)
+                // @ts-ignore
+                return (await sheet.getRows()).map((r: SpreadsheetRowType) => ({Student: r.Student, Start: r.Start}));
+            })
+            const filterSpreadsheetRows = (rawRows: SpreadsheetRowType[]) => {
+                const rows: SpreadsheetRowHelper[] = rawRows.map(row => new SpreadsheetRowHelper(row))
+                d(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
+                const filteredRows = rows.filter(row => row.isWithinDateRange());
+                d(`${filteredRows.length} rows left after filter`)
+                return filteredRows;
             }
 
-            d(`Fetched ${response.data.items?.length} events from calendar`);
+            const compareEventsAndSpreadsheet = async () => {
+                const allEvents = await fetchAllCalendarEvents();
+                const allSpreadsheetRecords = filterSpreadsheetRows(await fetchAllSpreadsheetRecords());
+                const eventsWhichDontExistInTheSpreadsheet = allEvents
+                    .filter(
+                        event => {
+                            let b = !allSpreadsheetRecords
+                                .find(
+                                    spreadsheetRecord => {
+                                        return isSame(spreadsheetRecord, event);
+                                    }
+                                );
+                            return b;
+                        }
+                    );
 
-            // Filter out items with no summary, we can ignore those
-            return response.data.items?.filter(item => item.summary) || [];
-        })
-        const fetchAllSpreadsheetRecords = replayableFunction('spreadsheetRecords', async () => {
-            d(`Getting rows from sheet...`)
-            // @ts-ignore
-            return (await sheet.getRows()).map((r: SpreadsheetRowType) => ({Student: r.Student, Start: r.Start}));
-        })
-        const filterSpreadsheetRows = (rawRows: SpreadsheetRowType[]) => {
-            const rows: SpreadsheetRowHelper[] = rawRows.map(row => new SpreadsheetRowHelper(row))
-            d(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
-            const filteredRows = rows.filter(row => row.isWithinDateRange());
-            d(`${filteredRows.length} rows left after filter`)
-            return filteredRows;
-        }
-
-        const compareEventsAndSpreadsheet = async () => {
-            const allEvents = await fetchAllCalendarEvents();
-            const allSpreadsheetRecords = filterSpreadsheetRows(await fetchAllSpreadsheetRecords());
-            const eventsWhichDontExistInTheSpreadsheet = allEvents
-                .filter(
-                    event => {
-                        let b = !allSpreadsheetRecords
-                            .find(
-                                spreadsheetRecord => {
-                                    return isSame(spreadsheetRecord, event);
+                const insertRecordsIntoSpreadsheet = async () => {
+                    if (!eventsWhichDontExistInTheSpreadsheet.length) {
+                        d(`No events to insert into spreadsheet`);
+                        return;
+                    }
+                    d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
+                    const fmtDate = (d: undefined | null | string) => {
+                        const removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
+                        const date = removeTimezoneFromGoogleDate1 && new Date(removeTimezoneFromGoogleDate1);
+                        return date ?
+                            format(date, formatString) :
+                            date
+                    }
+                    const rowsBeingAdded = eventsWhichDontExistInTheSpreadsheet.map(evElement => {
+                            return (
+                                {
+                                    Student: evElement.summary as string,
+                                    Start: fmtDate(evElement.start?.dateTime) || "No start date",
+                                    End: fmtDate(evElement.end?.dateTime) || "No end date",
                                 }
                             );
-                        return b;
-                    }
-                );
-
-            const insertRecordsIntoSpreadsheet = async () => {
-                if (!eventsWhichDontExistInTheSpreadsheet.length) {
-                    d(`No events to insert into spreadsheet`);
-                    return;
+                        }
+                    );
+                    const result = await sheet.addRows(
+                        rowsBeingAdded
+                    );
+                    d(`Added ${result.length} rows to spreadsheet.`);
+                    d(JSON.stringify(rowsBeingAdded))
                 }
-                d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
-                const fmtDate = (d: undefined | null | string) => {
-                    const removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
-                    const date = removeTimezoneFromGoogleDate1 && new Date(removeTimezoneFromGoogleDate1);
-                    return date ?
-                        format(date, formatString) :
-                        date
-                }
-                const rowsBeingAdded = eventsWhichDontExistInTheSpreadsheet.map(evElement => {
-                        return (
-                            {
-                                Student: evElement.summary as string,
-                                Start: fmtDate(evElement.start?.dateTime) || "No start date",
-                                End: fmtDate(evElement.end?.dateTime) || "No end date",
-                            }
-                        );
-                    }
-                );
-                const result = await sheet.addRows(
-                    rowsBeingAdded
-                );
-                d(`Added ${result.length} rows to spreadsheet.`);
-                d(JSON.stringify(rowsBeingAdded))
+                await insertRecordsIntoSpreadsheet()
             }
-            await insertRecordsIntoSpreadsheet()
+            await compareEventsAndSpreadsheet();
+            endReplay();
         }
-        await compareEventsAndSpreadsheet();
-        endReplay();
+
     }
     if (process.env.SERVICE_PAUSED === 'true') {
         console.log(`service paused, exiting`)
