@@ -5,15 +5,56 @@ import {format, isWithinInterval, parse, add, sub} from 'date-fns';
 import debug from 'debug'
 import * as fs from "fs";
 
-const d = debug('events-to-spreadsheet:')
+config()
 
-// 11/24/2022 20:35:00
-const secondsInADay = 86400;
+const logInfo = debug('calendar-to-sheet:info:')
+const logRowsAdded = debug('calendar-to-sheet:rows-added:')
+const logConfig = debug('calendar-to-sheet:config:');
+
 const formatString = "yyyy/MM/dd H:mm:ss";
+const replayMapPath = './replay.json';
+const secondsInADay = 86400;
+
+const getRequiredEnvironmentVariable = <T extends {}>(keys: (keyof T)[]): T => {
+    const fromEntries = Object.fromEntries(
+        keys.map(key => [key, process.env[key] as string])
+    ) as T;
+    logConfig(JSON.stringify(fromEntries));
+    return fromEntries
+}
+
+
+const {
+    REPLAY,
+    GOOGLE_CREDENTIALS,
+    CALENDAR_SHEET_CONFIGURATIONS,
+    SHEET_ID,
+    TIME_OFFSET_START,
+    TIME_OFFSET_END,
+    RUN_INTERVAL,
+    SERVICE_PAUSED
+} = getRequiredEnvironmentVariable([
+    'REPLAY',
+    'GOOGLE_CREDENTIALS',
+    'CALENDAR_SHEET_CONFIGURATIONS',
+    'SHEET_ID',
+    'TIME_OFFSET_START',
+    'TIME_OFFSET_END',
+    'RUN_INTERVAL',
+    'SERVICE_PAUSED'
+])
+const isReplaying = REPLAY === 'true';
+const jsonCredentials = JSON.parse(GOOGLE_CREDENTIALS as string);
+const calendarSheetConfigs = JSON.parse(CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
+const docId = SHEET_ID as string;
+const timeOffsetStart = parseInt(TIME_OFFSET_START || String(secondsInADay * 31));
+const timeOffsetEnd = parseInt(TIME_OFFSET_END || String(secondsInADay * 31));
+const runInterval = parseInt(RUN_INTERVAL || "60000");
+
+
+
 
 let newReplayMap: Record<string, any> = {};
-const replayMapPath = './replay.json';
-const isReplaying = process.env.REPLAY === 'true';
 const replayableFunction = <T>(key: string, f: () => Promise<T>): () => Promise<T> => async () => {
     if (isReplaying) {
         const lastReplayMap = JSON.parse(fs.readFileSync(replayMapPath).toString('utf8'));
@@ -42,9 +83,7 @@ const endReplay = () => {
 
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
-config()
 
-const jsonCredentials = JSON.parse(process.env.GOOGLE_CREDENTIALS as string);
 const fromJsonCredentials = google.auth.fromJSON(jsonCredentials);
 // @ts-ignore
 fromJsonCredentials.scopes = [
@@ -57,14 +96,6 @@ type CalendarSheetConfig = {
     calendarId: string;
 }
 
-const calendarSheetConfigs = JSON.parse(process.env.CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
-const docId = process.env.SHEET_ID as string;
-
-
-const timeOffsetStart = parseInt(process.env.TIME_OFFSET_START || String(secondsInADay * 31));
-const timeOffsetEnd = parseInt(process.env.TIME_OFFSET_END || String(secondsInADay * 31));
-
-const runInterval = parseInt(process.env.RUN_INTERVAL || "60000");
 
 type SpreadsheetRowType = {
     Start: string,
@@ -122,7 +153,7 @@ const getMaxDate = () => new Date((new Date().getTime() + (timeOffsetEnd * 1000)
         startReplay();
         const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
         const doc = new GoogleSpreadsheet(docId);
-        d(`Authenticating document`)
+        logInfo(`Authenticating document`)
         await doc.useServiceAccountAuth(jsonCredentials);
         await doc.loadInfo();
         for (let i = 0; i < calendarSheetConfigs.length; i++) {
@@ -137,7 +168,7 @@ Commenting this out because I don't know if this call is indepontent, but when t
             }
 */
             const sheet = doc.sheetsByTitle[sheetTitle];
-            d(`Adding events for ${calendarId} ${sheetTitle}`)
+            logInfo(`Adding events for ${calendarId} ${sheetTitle}`)
             // Only take the records and events from within a month, so we don't have too many things
             const fetchAllCalendarEvents = replayableFunction(`calendarEvents-${calendarId}-${sheetTitle}`, async () => {
                 const timeMin = getMinDate().toISOString();
@@ -154,24 +185,24 @@ Commenting this out because I don't know if this call is indepontent, but when t
                 )
 
                 if (!response.data.items) {
-                    d(`Something went wrong fetching events from calendar ${calendarId}`);
+                    logInfo(`Something went wrong fetching events from calendar ${calendarId}`);
                 }
 
-                d(`Fetched ${response.data.items?.length} events from calendar`);
+                logInfo(`Fetched ${response.data.items?.length} events from calendar`);
 
                 // Filter out items with no summary, we can ignore those
                 return response.data.items?.filter(item => item.summary) || [];
             })
             const fetchAllSpreadsheetRecords = replayableFunction(`spreadsheetRecords-${calendarId}-${sheetTitle}`, async () => {
-                d(`Getting rows from sheet...`)
+                logInfo(`Getting rows from sheet...`)
                 // @ts-ignore
                 return (await sheet.getRows()).map((r: SpreadsheetRowType) => ({Student: r.Student, Start: r.Start}));
             })
             const filterSpreadsheetRows = (rawRows: SpreadsheetRowType[]) => {
                 const rows: SpreadsheetRowHelper[] = rawRows.map(row => new SpreadsheetRowHelper(row))
-                d(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
+                logInfo(`fetched ${rows.length} rows from sheet.  Filtering rows...`)
                 const filteredRows = rows.filter(row => row.isWithinDateRange());
-                d(`${filteredRows.length} rows left after filter`)
+                logInfo(`${filteredRows.length} rows left after filter`)
                 return filteredRows;
             }
 
@@ -193,10 +224,10 @@ Commenting this out because I don't know if this call is indepontent, but when t
 
                 const insertRecordsIntoSpreadsheet = async () => {
                     if (!eventsWhichDontExistInTheSpreadsheet.length) {
-                        d(`No events to insert into spreadsheet`);
+                        logInfo(`No events to insert into spreadsheet`);
                         return;
                     }
-                    d(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
+                    logInfo(`Adding ${eventsWhichDontExistInTheSpreadsheet.length} rows to spreadsheet...`);
                     const fmtDate = (d: undefined | null | string) => {
                         const removeTimezoneFromGoogleDate1 = d && removeTimezoneFromGoogleDate(d);
                         const date = removeTimezoneFromGoogleDate1 && new Date(removeTimezoneFromGoogleDate1);
@@ -217,8 +248,8 @@ Commenting this out because I don't know if this call is indepontent, but when t
                     const result = await sheet.addRows(
                         rowsBeingAdded
                     );
-                    d(`Added ${result.length} rows to spreadsheet.`);
-                    d(JSON.stringify(rowsBeingAdded))
+                    logInfo(`Added ${result.length} rows to spreadsheet.`);
+                    logRowsAdded(JSON.stringify(rowsBeingAdded))
                 }
                 await insertRecordsIntoSpreadsheet()
             }
@@ -227,18 +258,18 @@ Commenting this out because I don't know if this call is indepontent, but when t
         }
 
     }
-    if (process.env.SERVICE_PAUSED === 'true') {
+    if (SERVICE_PAUSED === 'true') {
         console.log(`service paused, exiting`)
         return;
     }
     while (true) {
         try {
-            d(`running iteration...`)
+            logInfo(`running iteration...`)
             await runIteration();
         } catch (e) {
             console.error(e)
         }
-        d(`Finished iteration.  Waiting ${runInterval}ms`)
+        logInfo(`Finished iteration.  Waiting ${runInterval}ms`)
         await new Promise(resolve => setTimeout(resolve, runInterval))
     }
 })();
