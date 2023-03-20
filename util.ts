@@ -74,32 +74,31 @@ export const endReplay = () => {
 export const isReplaying = allEnvironmentVariables.REPLAY === 'true';
 export const replayMapPath = './replay.json';
 export const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
-export const getFetchAllCalendarEvents = ({
-                                              calendarId,
-                                              sheetTitle,
-                                              timeMinIso,
-                                              timeMaxIso
-                                          }: { calendarId: string, sheetTitle: string, timeMinIso: Date, timeMaxIso: Date }) => replayableFunction(`calendarEvents-${calendarId}-${sheetTitle}`, async () => {
-    const response = await calendar.events.list({
-            calendarId,
-            timeMin: timeMinIso.toISOString(),
-            timeMax: timeMaxIso.toISOString(),
-            singleEvents: true,
-            orderBy: 'startTime',
-            maxResults: 2500
-        },
-        {}
-    )
-
-    if (!response.data.items) {
-        logInfo(`Something went wrong fetching events from calendar ${calendarId}`);
-    }
-
-    logInfo(`Fetched ${response.data.items?.length} events from calendar`);
-
-    // Filter out items with no summary, we can ignore those
-    return response.data.items?.filter(item => item.summary) || [];
-});
+export const getFetchAllCalendarEvents = (
+    {
+        calendarId,
+        sheetTitle,
+        timeMin,
+        timeMax
+    }: { calendarId: string, sheetTitle: string, timeMin: Date, timeMax: Date }) =>
+    replayableFunction(`calendarEvents-${calendarId}-${sheetTitle}`, async () => {
+        const response = await calendar.events.list({
+                calendarId,
+                timeMin: timeMin.toISOString(),
+                timeMax: timeMax.toISOString(),
+                singleEvents: true,
+                orderBy: 'startTime',
+                maxResults: 2500
+            },
+            {}
+        )
+        if (!response.data.items) {
+            logInfo(`Something went wrong fetching events from calendar ${calendarId}`);
+        }
+        logInfo(`Fetched ${response.data.items?.length} events from calendar`);
+        // Filter out items with no summary, we can ignore those
+        return response.data.items?.filter(item => item.summary) || [];
+    });
 
 export const calendarSheetConfigs = JSON.parse(allEnvironmentVariables.CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
 export type CalendarSheetConfig = {
@@ -109,4 +108,10 @@ export type CalendarSheetConfig = {
 export type SpreadsheetRowType = {
     Start: string,
     Student: string
+};
+export const getTodayDateRange = () => {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 0, 0, -1);
+    return [startOfDay, endOfDay];
 };

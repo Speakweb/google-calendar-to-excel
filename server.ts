@@ -109,8 +109,8 @@ Commenting this out because I don't know if this call is indepontent, but when t
             // Only take the records and events from within a month, so we don't have too many things
             const fetchAllCalendarEvents = getFetchAllCalendarEvents({
                 calendarId,
-                timeMinIso: getMinDate(),
-                timeMaxIso: getMaxDate(),
+                timeMin: getMinDate(),
+                timeMax: getMaxDate(),
                 sheetTitle
             })
             const fetchAllSpreadsheetRecords = replayableFunction(`spreadsheetRecords-${calendarId}-${sheetTitle}`, async () => {
