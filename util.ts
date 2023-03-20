@@ -101,3 +101,12 @@ export const getFetchAllCalendarEvents = ({
     return response.data.items?.filter(item => item.summary) || [];
 });
 
+export const calendarSheetConfigs = JSON.parse(allEnvironmentVariables.CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
+export type CalendarSheetConfig = {
+    sheetTitle: string;
+    calendarId: string;
+}
+export type SpreadsheetRowType = {
+    Start: string,
+    Student: string
+};

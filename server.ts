@@ -5,10 +5,12 @@ import {add, format, isWithinInterval, parse, sub} from 'date-fns';
 import {logInfo, logRowsAdded, secondsInADay} from "./logInfo";
 import {
     allEnvironmentVariables,
+    calendarSheetConfigs,
     endReplay,
     getFetchAllCalendarEvents,
     jsonCredentials,
     replayableFunction,
+    SpreadsheetRowType,
     startReplay
 } from "./util";
 
@@ -27,7 +29,6 @@ const {
     SERVICE_PAUSED
 } = allEnvironmentVariables;
 
-const calendarSheetConfigs = JSON.parse(CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
 const docId = SHEET_ID as string;
 const timeOffsetStart = parseInt(TIME_OFFSET_START || String(secondsInADay * 31));
 const timeOffsetEnd = parseInt(TIME_OFFSET_END || String(secondsInADay * 31));
@@ -38,17 +39,6 @@ const runInterval = parseInt(RUN_INTERVAL || "60000");
 
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
-
-type CalendarSheetConfig = {
-    sheetTitle: string;
-    calendarId: string;
-}
-
-
-type SpreadsheetRowType = {
-    Start: string,
-    Student: string
-};
 
 const isSpreadsheetStartDateWithinDateRage = (date: Date) => {
     // The date filter in google calendar is a bit looser somehow, and events not strictly between the ranges even will appear
