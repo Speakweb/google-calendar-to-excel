@@ -1,28 +1,20 @@
-import {calendar_v3, google} from 'googleapis';
-import {GoogleSpreadsheet, GoogleSpreadsheetRow} from 'google-spreadsheet';
+import {calendar_v3} from 'googleapis';
+import {GoogleSpreadsheet} from 'google-spreadsheet';
 import {config} from 'dotenv';
-import {format, isWithinInterval, parse, add, sub} from 'date-fns';
-import debug from 'debug'
-import * as fs from "fs";
+import {add, format, isWithinInterval, parse, sub} from 'date-fns';
+import {logInfo, logRowsAdded, secondsInADay} from "./logInfo";
+import {
+    allEnvironmentVariables,
+    endReplay,
+    getFetchAllCalendarEvents,
+    jsonCredentials,
+    replayableFunction,
+    startReplay
+} from "./util";
 
 config()
 
-const logInfo = debug('calendar-to-sheet:info:')
-const logRowsAdded = debug('calendar-to-sheet:rows-added:')
-const logConfig = debug('calendar-to-sheet:config:');
-
 const formatString = "yyyy/MM/dd H:mm:ss";
-const replayMapPath = './replay.json';
-const secondsInADay = 86400;
-
-const getRequiredEnvironmentVariable = <T extends {}>(keys: (keyof T)[]): T => {
-    const fromEntries = Object.fromEntries(
-        keys.map(key => [key, process.env[key] as string])
-    ) as T;
-    logConfig(JSON.stringify(fromEntries));
-    return fromEntries
-}
-
 
 const {
     REPLAY,
@@ -33,18 +25,8 @@ const {
     TIME_OFFSET_END,
     RUN_INTERVAL,
     SERVICE_PAUSED
-} = getRequiredEnvironmentVariable([
-    'REPLAY',
-    'GOOGLE_CREDENTIALS',
-    'CALENDAR_SHEET_CONFIGURATIONS',
-    'SHEET_ID',
-    'TIME_OFFSET_START',
-    'TIME_OFFSET_END',
-    'RUN_INTERVAL',
-    'SERVICE_PAUSED'
-])
-const isReplaying = REPLAY === 'true';
-const jsonCredentials = JSON.parse(GOOGLE_CREDENTIALS as string);
+} = allEnvironmentVariables;
+
 const calendarSheetConfigs = JSON.parse(CALENDAR_SHEET_CONFIGURATIONS as string) as CalendarSheetConfig[];
 const docId = SHEET_ID as string;
 const timeOffsetStart = parseInt(TIME_OFFSET_START || String(secondsInADay * 31));
@@ -54,42 +36,8 @@ const runInterval = parseInt(RUN_INTERVAL || "60000");
 
 
 
-let newReplayMap: Record<string, any> = {};
-const replayableFunction = <T>(key: string, f: () => Promise<T>): () => Promise<T> => async () => {
-    if (isReplaying) {
-        const lastReplayMap = JSON.parse(fs.readFileSync(replayMapPath).toString('utf8'));
-        if (lastReplayMap[key] === undefined) {
-            throw new Error(`Replay dictionary key ${key} is undefined`);
-        }
-        return lastReplayMap[key];
-    }
-
-    const returned = await f();
-    if (newReplayMap[key]) {
-        // THere' sa possibility of adding array replaying, but it gets way too complicated
-        throw new Error(`replayKey: ${key} used twice.  You cannot use the same key in different places, or call the same function twice`)
-    }
-    newReplayMap[key] = returned;
-    return newReplayMap[key];
-}
-const startReplay = () => {
-    newReplayMap = {};
-}
-const endReplay = () => {
-    if (!isReplaying) {
-        fs.writeFileSync(replayMapPath, JSON.stringify(newReplayMap, undefined,'\t'));
-    }
-}
-
 const parseSpreadsheetDate = (dateStr: string) => parse(dateStr, formatString, new Date());
 
-
-const fromJsonCredentials = google.auth.fromJSON(jsonCredentials);
-// @ts-ignore
-fromJsonCredentials.scopes = [
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/calendar.events"
-];
 
 type CalendarSheetConfig = {
     sheetTitle: string;
@@ -151,7 +99,6 @@ const getMaxDate = () => new Date((new Date().getTime() + (timeOffsetEnd * 1000)
 (async () => {
     const runIteration = async () => {
         startReplay();
-        const calendar = google.calendar({version: 'v3', auth: fromJsonCredentials});
         const doc = new GoogleSpreadsheet(docId);
         logInfo(`Authenticating document`)
         await doc.useServiceAccountAuth(jsonCredentials);
@@ -170,28 +117,11 @@ Commenting this out because I don't know if this call is indepontent, but when t
             const sheet = doc.sheetsByTitle[sheetTitle];
             logInfo(`Adding events for ${calendarId} ${sheetTitle}`)
             // Only take the records and events from within a month, so we don't have too many things
-            const fetchAllCalendarEvents = replayableFunction(`calendarEvents-${calendarId}-${sheetTitle}`, async () => {
-                const timeMin = getMinDate().toISOString();
-                const timeMax = getMaxDate().toISOString();
-                const response = await calendar.events.list({
-                        calendarId,
-                        timeMin: timeMin,
-                        timeMax: timeMax,
-                        singleEvents: true,
-                        orderBy: 'startTime',
-                        maxResults: 2500
-                    },
-                    {}
-                )
-
-                if (!response.data.items) {
-                    logInfo(`Something went wrong fetching events from calendar ${calendarId}`);
-                }
-
-                logInfo(`Fetched ${response.data.items?.length} events from calendar`);
-
-                // Filter out items with no summary, we can ignore those
-                return response.data.items?.filter(item => item.summary) || [];
+            const fetchAllCalendarEvents = getFetchAllCalendarEvents({
+                calendarId,
+                timeMinIso: getMinDate(),
+                timeMaxIso: getMaxDate(),
+                sheetTitle
             })
             const fetchAllSpreadsheetRecords = replayableFunction(`spreadsheetRecords-${calendarId}-${sheetTitle}`, async () => {
                 logInfo(`Getting rows from sheet...`)
