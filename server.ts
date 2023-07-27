@@ -2,7 +2,8 @@ import {calendar_v3} from 'googleapis';
 import {GoogleSpreadsheet} from 'google-spreadsheet';
 import {config} from 'dotenv';
 import {add, format, isWithinInterval, parse, sub} from 'date-fns';
-import {logInfo, logRowsAdded, secondsInADay} from "./logInfo";
+import {logInfo, logRowsAdded, secondsInADay} from "./logInfo.js";
+
 import {
     allEnvironmentVariables,
     calendarSheetConfigs,
