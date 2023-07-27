@@ -13,7 +13,7 @@ import {
     replayableFunction,
     SpreadsheetRowType,
     startReplay
-} from "./util";
+} from "./util.js";
 
 config()
 

@@ -1,4 +1,4 @@
-import {getRequiredEnvironmentVariable, logInfo} from "./logInfo";
+import {getRequiredEnvironmentVariable, logInfo} from "./logInfo.js";
 import fs from "fs";
 import {google} from "googleapis";
 
